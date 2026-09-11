@@ -31,8 +31,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define S_CHROMATIC_ABERRATION "chromatic_aberration"
 #define S_SHIMMER_SPEED "shimmer_speed"
 #define S_SHIMMER_AMPLITUDE "shimmer_amplitude"
+#define S_SPECULAR_INTENSITY "specular_intensity"
+#define S_SPECULAR_SHININESS "specular_shininess"
 #define S_EDGE_HIGHLIGHT_WIDTH "edge_highlight_width"
 #define S_EDGE_HIGHLIGHT_INTENSITY "edge_highlight_intensity"
+#define S_SHEEN_SPEED "sheen_speed"
+#define S_SHEEN_WIDTH "sheen_width"
+#define S_SHEEN_INTENSITY "sheen_intensity"
+#define S_SHADOW_INTENSITY "shadow_intensity"
+#define S_SHADOW_SIZE "shadow_size"
+#define S_NOISE_AMOUNT "noise_amount"
 #define S_BORDER_WIDTH "border_width"
 #define S_BORDER_COLOR "border_color"
 #define S_TINT_COLOR "tint_color"
@@ -51,8 +59,16 @@ struct glass_filter {
 	gs_eparam_t *param_shimmer_speed;
 	gs_eparam_t *param_shimmer_amplitude;
 	gs_eparam_t *param_elapsed_time;
+	gs_eparam_t *param_specular_intensity;
+	gs_eparam_t *param_specular_shininess;
 	gs_eparam_t *param_edge_highlight_width;
 	gs_eparam_t *param_edge_highlight_intensity;
+	gs_eparam_t *param_sheen_speed;
+	gs_eparam_t *param_sheen_width;
+	gs_eparam_t *param_sheen_intensity;
+	gs_eparam_t *param_shadow_intensity;
+	gs_eparam_t *param_shadow_size;
+	gs_eparam_t *param_noise_amount;
 	gs_eparam_t *param_border_width;
 	gs_eparam_t *param_border_color;
 	gs_eparam_t *param_tint_color;
@@ -64,8 +80,16 @@ struct glass_filter {
 	float chromatic_aberration;
 	float shimmer_speed;
 	float shimmer_amplitude;
+	float specular_intensity;
+	float specular_shininess;
 	float edge_highlight_width;
 	float edge_highlight_intensity;
+	float sheen_speed;
+	float sheen_width;
+	float sheen_intensity;
+	float shadow_intensity;
+	float shadow_size;
+	float noise_amount;
 	float border_width;
 	struct vec4 border_color;
 	struct vec4 tint_color;
@@ -96,8 +120,20 @@ static void glass_filter_update(void *data, obs_data_t *settings)
 	filter->shimmer_speed = (float)obs_data_get_double(settings, S_SHIMMER_SPEED);
 	filter->shimmer_amplitude = (float)obs_data_get_double(settings, S_SHIMMER_AMPLITUDE);
 
+	filter->specular_intensity = (float)obs_data_get_double(settings, S_SPECULAR_INTENSITY);
+	filter->specular_shininess = (float)obs_data_get_double(settings, S_SPECULAR_SHININESS);
+
 	filter->edge_highlight_width = (float)obs_data_get_double(settings, S_EDGE_HIGHLIGHT_WIDTH);
 	filter->edge_highlight_intensity = (float)obs_data_get_double(settings, S_EDGE_HIGHLIGHT_INTENSITY);
+
+	filter->sheen_speed = (float)obs_data_get_double(settings, S_SHEEN_SPEED);
+	filter->sheen_width = (float)obs_data_get_double(settings, S_SHEEN_WIDTH);
+	filter->sheen_intensity = (float)obs_data_get_double(settings, S_SHEEN_INTENSITY);
+
+	filter->shadow_intensity = (float)obs_data_get_double(settings, S_SHADOW_INTENSITY);
+	filter->shadow_size = (float)obs_data_get_double(settings, S_SHADOW_SIZE);
+
+	filter->noise_amount = (float)obs_data_get_double(settings, S_NOISE_AMOUNT);
 
 	filter->border_width = (float)obs_data_get_double(settings, S_BORDER_WIDTH);
 
@@ -134,9 +170,17 @@ static void *glass_filter_create(obs_data_t *settings, obs_source_t *source)
 	filter->param_shimmer_speed = gs_effect_get_param_by_name(filter->effect, "shimmer_speed");
 	filter->param_shimmer_amplitude = gs_effect_get_param_by_name(filter->effect, "shimmer_amplitude");
 	filter->param_elapsed_time = gs_effect_get_param_by_name(filter->effect, "elapsed_time");
+	filter->param_specular_intensity = gs_effect_get_param_by_name(filter->effect, "specular_intensity");
+	filter->param_specular_shininess = gs_effect_get_param_by_name(filter->effect, "specular_shininess");
 	filter->param_edge_highlight_width = gs_effect_get_param_by_name(filter->effect, "edge_highlight_width");
 	filter->param_edge_highlight_intensity =
 		gs_effect_get_param_by_name(filter->effect, "edge_highlight_intensity");
+	filter->param_sheen_speed = gs_effect_get_param_by_name(filter->effect, "sheen_speed");
+	filter->param_sheen_width = gs_effect_get_param_by_name(filter->effect, "sheen_width");
+	filter->param_sheen_intensity = gs_effect_get_param_by_name(filter->effect, "sheen_intensity");
+	filter->param_shadow_intensity = gs_effect_get_param_by_name(filter->effect, "shadow_intensity");
+	filter->param_shadow_size = gs_effect_get_param_by_name(filter->effect, "shadow_size");
+	filter->param_noise_amount = gs_effect_get_param_by_name(filter->effect, "noise_amount");
 	filter->param_border_width = gs_effect_get_param_by_name(filter->effect, "border_width");
 	filter->param_border_color = gs_effect_get_param_by_name(filter->effect, "border_color");
 	filter->param_tint_color = gs_effect_get_param_by_name(filter->effect, "tint_color");
@@ -196,8 +240,16 @@ static void glass_filter_video_render(void *data, gs_effect_t *effect)
 	gs_effect_set_float(filter->param_shimmer_speed, filter->shimmer_speed);
 	gs_effect_set_float(filter->param_shimmer_amplitude, filter->shimmer_amplitude);
 	gs_effect_set_float(filter->param_elapsed_time, filter->elapsed_time);
+	gs_effect_set_float(filter->param_specular_intensity, filter->specular_intensity);
+	gs_effect_set_float(filter->param_specular_shininess, filter->specular_shininess);
 	gs_effect_set_float(filter->param_edge_highlight_width, filter->edge_highlight_width);
 	gs_effect_set_float(filter->param_edge_highlight_intensity, filter->edge_highlight_intensity);
+	gs_effect_set_float(filter->param_sheen_speed, filter->sheen_speed);
+	gs_effect_set_float(filter->param_sheen_width, filter->sheen_width);
+	gs_effect_set_float(filter->param_sheen_intensity, filter->sheen_intensity);
+	gs_effect_set_float(filter->param_shadow_intensity, filter->shadow_intensity);
+	gs_effect_set_float(filter->param_shadow_size, filter->shadow_size);
+	gs_effect_set_float(filter->param_noise_amount, filter->noise_amount);
 	gs_effect_set_float(filter->param_border_width, filter->border_width);
 	gs_effect_set_vec4(filter->param_border_color, &filter->border_color);
 	gs_effect_set_vec4(filter->param_tint_color, &filter->tint_color);
@@ -232,10 +284,30 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 	obs_properties_add_float_slider(props, S_SHIMMER_AMPLITUDE, obs_module_text("LiquidGlass.ShimmerAmplitude"),
 					 0.0, 20.0, 0.1);
 
+	obs_properties_add_float_slider(props, S_SPECULAR_INTENSITY,
+					 obs_module_text("LiquidGlass.SpecularIntensity"), 0.0, 1.5, 0.01);
+	obs_properties_add_float_slider(props, S_SPECULAR_SHININESS,
+					 obs_module_text("LiquidGlass.SpecularShininess"), 1.0, 128.0, 1.0);
+
 	obs_properties_add_float_slider(props, S_EDGE_HIGHLIGHT_WIDTH,
 					 obs_module_text("LiquidGlass.EdgeHighlightWidth"), 0.0, 60.0, 0.5);
 	obs_properties_add_float_slider(props, S_EDGE_HIGHLIGHT_INTENSITY,
 					 obs_module_text("LiquidGlass.EdgeHighlightIntensity"), 0.0, 3.0, 0.02);
+
+	obs_properties_add_float_slider(props, S_SHEEN_SPEED, obs_module_text("LiquidGlass.SheenSpeed"), 0.0, 2.0,
+					 0.01);
+	obs_properties_add_float_slider(props, S_SHEEN_WIDTH, obs_module_text("LiquidGlass.SheenWidth"), 0.05, 1.5,
+					 0.01);
+	obs_properties_add_float_slider(props, S_SHEEN_INTENSITY, obs_module_text("LiquidGlass.SheenIntensity"), 0.0,
+					 1.5, 0.01);
+
+	obs_properties_add_float_slider(props, S_SHADOW_INTENSITY, obs_module_text("LiquidGlass.ShadowIntensity"),
+					 0.0, 1.0, 0.01);
+	obs_properties_add_float_slider(props, S_SHADOW_SIZE, obs_module_text("LiquidGlass.ShadowSize"), 0.0, 120.0,
+					 1.0);
+
+	obs_properties_add_float_slider(props, S_NOISE_AMOUNT, obs_module_text("LiquidGlass.NoiseAmount"), 0.0, 0.15,
+					 0.002);
 
 	obs_properties_add_float_slider(props, S_BORDER_WIDTH, obs_module_text("LiquidGlass.BorderWidth"), 0.0, 20.0,
 					 0.1);
@@ -251,17 +323,29 @@ static void glass_filter_get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, S_PANEL_Y, 700.0);
 	obs_data_set_default_double(settings, S_PANEL_W, 640.0);
 	obs_data_set_default_double(settings, S_PANEL_H, 260.0);
-	obs_data_set_default_double(settings, S_CORNER_RADIUS, 36.0);
+	obs_data_set_default_double(settings, S_CORNER_RADIUS, 56.0);
 
-	obs_data_set_default_double(settings, S_BLUR_AMOUNT, 14.0);
-	obs_data_set_default_double(settings, S_REFRACTION_STRENGTH, 16.0);
-	obs_data_set_default_double(settings, S_CHROMATIC_ABERRATION, 2.5);
+	obs_data_set_default_double(settings, S_BLUR_AMOUNT, 20.0);
+	obs_data_set_default_double(settings, S_REFRACTION_STRENGTH, 30.0);
+	obs_data_set_default_double(settings, S_CHROMATIC_ABERRATION, 3.5);
 
-	obs_data_set_default_double(settings, S_SHIMMER_SPEED, 0.6);
-	obs_data_set_default_double(settings, S_SHIMMER_AMPLITUDE, 1.5);
+	obs_data_set_default_double(settings, S_SHIMMER_SPEED, 0.5);
+	obs_data_set_default_double(settings, S_SHIMMER_AMPLITUDE, 1.2);
 
-	obs_data_set_default_double(settings, S_EDGE_HIGHLIGHT_WIDTH, 10.0);
+	obs_data_set_default_double(settings, S_SPECULAR_INTENSITY, 0.4);
+	obs_data_set_default_double(settings, S_SPECULAR_SHININESS, 24.0);
+
+	obs_data_set_default_double(settings, S_EDGE_HIGHLIGHT_WIDTH, 8.0);
 	obs_data_set_default_double(settings, S_EDGE_HIGHLIGHT_INTENSITY, 0.6);
+
+	obs_data_set_default_double(settings, S_SHEEN_SPEED, 0.15);
+	obs_data_set_default_double(settings, S_SHEEN_WIDTH, 0.35);
+	obs_data_set_default_double(settings, S_SHEEN_INTENSITY, 0.5);
+
+	obs_data_set_default_double(settings, S_SHADOW_INTENSITY, 0.35);
+	obs_data_set_default_double(settings, S_SHADOW_SIZE, 28.0);
+
+	obs_data_set_default_double(settings, S_NOISE_AMOUNT, 0.02);
 
 	obs_data_set_default_double(settings, S_BORDER_WIDTH, 1.5);
 	obs_data_set_default_int(settings, S_BORDER_COLOR, 0x40FFFFFF);
