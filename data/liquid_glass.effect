@@ -164,7 +164,10 @@ float4 PSGlass(VertData v_in) : TARGET
 	float nz  = sqrt(saturate(1.0 - dot(n2, n2)));
 	float3 N  = normalize(float3(n2, nz));
 	float3 L0 = normalize(float3(-0.45, -0.7, 0.55));
-	float contentPull = saturate(lumaGradMag * 8.0) * saturate(content_reactivity);
+	// Smoothstepped and capped so a hard rectangular edge in the backdrop
+	// (a window, webcam frame, UI panel) can only nudge the light gently,
+	// never yank it hard enough to stamp that edge's shape onto the glass.
+	float contentPull = smoothstep(0.0, 0.35, lumaGradMag) * saturate(content_reactivity) * 0.55;
 	float2 L_xy = lerp(L0.xy, normalize(lumaGrad + 1e-5) * length(L0.xy), contentPull);
 	float3 L  = normalize(float3(L_xy, L0.z));
 	float3 V  = float3(0.0, 0.0, 1.0);
@@ -177,15 +180,21 @@ float4 PSGlass(VertData v_in) : TARGET
 	float light_bias = saturate(dot(grad, -L.xy) * 0.5 + 0.5);
 	color.rgb += rim * (0.3 + 0.7 * light_bias) * edge_highlight_intensity;
 
-	// Diagonal glint sweep, but gated by real backdrop contrast: the sweep
-	// position still drifts with time (so it's alive over static scenes),
-	// yet only actually lights up where there is genuine detail to catch,
-	// so it reads as light grazing real content instead of a looping decal.
+	// Diagonal glint sweep. A sine oscillation (not a frac()-wrapped ramp)
+	// so the sweep glides back and forth with no seam -- a sawtooth resets
+	// hard every cycle, which is exactly the "stutter" a looping decal reads
+	// as; a sine has no discontinuity anywhere and eases naturally at the
+	// turnaround instead of snapping back.
 	float diag = (local.x + local.y) / max(half_size.x + half_size.y, 1.0);
-	float sweepPos = frac(elapsed_time * sheen_speed) * 2.4 - 1.2;
+	float sweepPos = sin(elapsed_time * sheen_speed * 3.14159265) * 1.2;
 	float sheenTime = exp(-pow((diag - sweepPos) / max(sheen_width, 0.001), 2.0));
-	float contentGate = lerp(1.0, saturate(lumaGradMag * 6.0 + 0.15), saturate(content_reactivity));
-	float sheen = sheenTime * contentGate * sheen_intensity;
+	// Real backdrop detail adds a modest bonus sparkle on top, but the base
+	// sweep (which fully traces the panel's own rounded shape) always shows
+	// at full strength -- content can never gate it down to a hole, so a
+	// hard-edged window/webcam behind the glass can't stamp its silhouette
+	// onto the glint.
+	float contentBoost = smoothstep(0.0, 0.4, lumaGradMag) * saturate(content_reactivity) * 0.6;
+	float sheen = sheenTime * sheen_intensity * (1.0 + contentBoost);
 	color.rgb += sheen;
 
 	// Adaptive brightness: lift the glass over dark backdrops so detail

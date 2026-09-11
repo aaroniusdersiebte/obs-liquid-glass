@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 #include <graphics/vec2.h>
 #include <graphics/vec4.h>
+#include <math.h>
 
 #define S_PANEL_X "panel_x"
 #define S_PANEL_Y "panel_y"
@@ -240,11 +241,34 @@ static void glass_filter_video_render(void *data, gs_effect_t *effect)
 	struct vec2 uv_size;
 	vec2_set(&uv_size, (float)width, (float)height);
 
+	// Keep the panel fully inside the actual frame. Without this, panel
+	// coordinates typed for one canvas size (or a filter target smaller
+	// than expected, e.g. a cropped/lower-res source) can push the right
+	// or bottom edge past the frame boundary -- the rounded corner there
+	// then never gets rasterized at all, and what's left looks like a
+	// flat, square cut instead of a round one. Sliding the panel inward
+	// (or shrinking it, only if it's larger than the frame) guarantees
+	// every corner is always actually on-screen.
+	float panel_w = filter->panel_w;
+	float panel_h = filter->panel_h;
+	float panel_x = filter->panel_x;
+	float panel_y = filter->panel_y;
+	if (width > 0 && height > 0) {
+		if (panel_w > (float)width)
+			panel_w = (float)width;
+		if (panel_h > (float)height)
+			panel_h = (float)height;
+		float max_x = (float)width - panel_w;
+		float max_y = (float)height - panel_h;
+		panel_x = fmaxf(0.0f, fminf(panel_x, max_x));
+		panel_y = fmaxf(0.0f, fminf(panel_y, max_y));
+	}
+
 	struct vec2 pos;
-	vec2_set(&pos, filter->panel_x, filter->panel_y);
+	vec2_set(&pos, panel_x, panel_y);
 
 	struct vec2 size;
-	vec2_set(&size, filter->panel_w, filter->panel_h);
+	vec2_set(&size, panel_w, panel_h);
 
 	gs_effect_set_vec2(filter->param_uv_size, &uv_size);
 	gs_effect_set_vec2(filter->param_panel_pos, &pos);
