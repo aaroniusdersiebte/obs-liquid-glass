@@ -29,6 +29,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define S_CORNER_RADIUS "corner_radius"
 #define S_BLUR_AMOUNT "blur_amount"
 #define S_REFRACTION_STRENGTH "refraction_strength"
+#define S_LENS_MAGNIFICATION "lens_magnification"
 #define S_CHROMATIC_ABERRATION "chromatic_aberration"
 #define S_SHIMMER_SPEED "shimmer_speed"
 #define S_SHIMMER_AMPLITUDE "shimmer_amplitude"
@@ -59,6 +60,7 @@ struct glass_filter {
 	gs_eparam_t *param_corner_radius;
 	gs_eparam_t *param_blur_amount;
 	gs_eparam_t *param_refraction_strength;
+	gs_eparam_t *param_lens_magnification;
 	gs_eparam_t *param_chromatic_aberration;
 	gs_eparam_t *param_shimmer_speed;
 	gs_eparam_t *param_shimmer_amplitude;
@@ -84,6 +86,7 @@ struct glass_filter {
 	float corner_radius;
 	float blur_amount;
 	float refraction_strength;
+	float lens_magnification;
 	float chromatic_aberration;
 	float shimmer_speed;
 	float shimmer_amplitude;
@@ -125,6 +128,7 @@ static void glass_filter_update(void *data, obs_data_t *settings)
 
 	filter->blur_amount = (float)obs_data_get_double(settings, S_BLUR_AMOUNT);
 	filter->refraction_strength = (float)obs_data_get_double(settings, S_REFRACTION_STRENGTH);
+	filter->lens_magnification = (float)obs_data_get_double(settings, S_LENS_MAGNIFICATION);
 	filter->chromatic_aberration = (float)obs_data_get_double(settings, S_CHROMATIC_ABERRATION);
 
 	filter->shimmer_speed = (float)obs_data_get_double(settings, S_SHIMMER_SPEED);
@@ -180,6 +184,7 @@ static void *glass_filter_create(obs_data_t *settings, obs_source_t *source)
 	filter->param_corner_radius = gs_effect_get_param_by_name(filter->effect, "corner_radius");
 	filter->param_blur_amount = gs_effect_get_param_by_name(filter->effect, "blur_amount");
 	filter->param_refraction_strength = gs_effect_get_param_by_name(filter->effect, "refraction_strength");
+	filter->param_lens_magnification = gs_effect_get_param_by_name(filter->effect, "lens_magnification");
 	filter->param_chromatic_aberration = gs_effect_get_param_by_name(filter->effect, "chromatic_aberration");
 	filter->param_shimmer_speed = gs_effect_get_param_by_name(filter->effect, "shimmer_speed");
 	filter->param_shimmer_amplitude = gs_effect_get_param_by_name(filter->effect, "shimmer_amplitude");
@@ -276,6 +281,7 @@ static void glass_filter_video_render(void *data, gs_effect_t *effect)
 	gs_effect_set_float(filter->param_corner_radius, filter->corner_radius);
 	gs_effect_set_float(filter->param_blur_amount, filter->blur_amount);
 	gs_effect_set_float(filter->param_refraction_strength, filter->refraction_strength);
+	gs_effect_set_float(filter->param_lens_magnification, filter->lens_magnification);
 	gs_effect_set_float(filter->param_chromatic_aberration, filter->chromatic_aberration);
 	gs_effect_set_float(filter->param_shimmer_speed, filter->shimmer_speed);
 	gs_effect_set_float(filter->param_shimmer_amplitude, filter->shimmer_amplitude);
@@ -319,6 +325,8 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 					 0.5);
 	obs_properties_add_float_slider(props, S_REFRACTION_STRENGTH,
 					 obs_module_text("LiquidGlass.RefractionStrength"), 0.0, 80.0, 0.5);
+	obs_properties_add_float_slider(props, S_LENS_MAGNIFICATION,
+					 obs_module_text("LiquidGlass.LensMagnification"), 0.0, 1.0, 0.01);
 	obs_properties_add_float_slider(props, S_CHROMATIC_ABERRATION,
 					 obs_module_text("LiquidGlass.ChromaticAberration"), 0.0, 20.0, 0.1);
 
@@ -374,18 +382,19 @@ static void glass_filter_get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, S_PANEL_H, 260.0);
 	obs_data_set_default_double(settings, S_CORNER_RADIUS, 56.0);
 
-	obs_data_set_default_double(settings, S_BLUR_AMOUNT, 20.0);
-	obs_data_set_default_double(settings, S_REFRACTION_STRENGTH, 30.0);
-	obs_data_set_default_double(settings, S_CHROMATIC_ABERRATION, 3.5);
+	obs_data_set_default_double(settings, S_BLUR_AMOUNT, 24.0);
+	obs_data_set_default_double(settings, S_REFRACTION_STRENGTH, 40.0);
+	obs_data_set_default_double(settings, S_LENS_MAGNIFICATION, 0.55);
+	obs_data_set_default_double(settings, S_CHROMATIC_ABERRATION, 4.5);
 
 	obs_data_set_default_double(settings, S_SHIMMER_SPEED, 0.5);
 	obs_data_set_default_double(settings, S_SHIMMER_AMPLITUDE, 1.2);
 
-	obs_data_set_default_double(settings, S_SPECULAR_INTENSITY, 0.4);
+	obs_data_set_default_double(settings, S_SPECULAR_INTENSITY, 0.5);
 	obs_data_set_default_double(settings, S_SPECULAR_SHININESS, 24.0);
 
 	obs_data_set_default_double(settings, S_EDGE_HIGHLIGHT_WIDTH, 8.0);
-	obs_data_set_default_double(settings, S_EDGE_HIGHLIGHT_INTENSITY, 0.6);
+	obs_data_set_default_double(settings, S_EDGE_HIGHLIGHT_INTENSITY, 0.75);
 
 	obs_data_set_default_double(settings, S_SHEEN_SPEED, 0.12);
 	obs_data_set_default_double(settings, S_SHEEN_WIDTH, 0.35);
@@ -393,7 +402,7 @@ static void glass_filter_get_defaults(obs_data_t *settings)
 
 	obs_data_set_default_double(settings, S_CONTENT_REACTIVITY, 0.8);
 	obs_data_set_default_double(settings, S_ADAPTIVE_BRIGHTNESS, 0.5);
-	obs_data_set_default_double(settings, S_VIBRANCY, 0.2);
+	obs_data_set_default_double(settings, S_VIBRANCY, 0.3);
 
 	obs_data_set_default_double(settings, S_SHADOW_INTENSITY, 0.35);
 	obs_data_set_default_double(settings, S_SHADOW_SIZE, 28.0);

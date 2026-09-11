@@ -17,6 +17,7 @@ uniform float corner_radius;        // pixels
 uniform float blur_amount;          // pixel radius of backdrop blur
 uniform float refraction_strength;  // pixel offset at the panel edge
 uniform float chromatic_aberration; // pixel offset for R/B channel split
+uniform float lens_magnification;   // 0..1ish, radial bulge/compression strength at the rim
 
 uniform float shimmer_speed;        // radians/sec
 uniform float shimmer_amplitude;    // pixels
@@ -120,6 +121,16 @@ float4 PSGlass(VertData v_in) : TARGET
 
 	float2 refract_px = grad * domeFalloff * refraction_strength + shimmer;
 	float2 sample_uv  = v_in.uv + refract_px / uv_size;
+
+	// Lens magnification: near the rim, pull the sample radially toward the
+	// panel center and compress it, the way a real plano-convex lens bends
+	// its image inward at the boundary. This is what makes backdrop content
+	// visibly bulge/compress as it crosses under the glass, instead of just
+	// shifting by a constant offset -- the single biggest cue that reads as
+	// "real refracting lens" rather than "blurred, slightly shifted panel".
+	float2 center_uv = center / uv_size;
+	float bulge = domeFalloff * saturate(lens_magnification);
+	sample_uv = lerp(sample_uv, center_uv + (sample_uv - center_uv) * (1.0 - bulge), bulge * 0.85);
 
 	// Backdrop blur: gaussian-weighted 5x5 taps around the refracted sample.
 	float4 color = float4(0.0, 0.0, 0.0, 0.0);
