@@ -318,56 +318,56 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 	obs_properties_add_float(props, S_PANEL_Y, obs_module_text("LiquidGlass.PanelY"), -10000.0, 10000.0, 1.0);
 	obs_properties_add_float(props, S_PANEL_W, obs_module_text("LiquidGlass.PanelW"), 1.0, 10000.0, 1.0);
 	obs_properties_add_float(props, S_PANEL_H, obs_module_text("LiquidGlass.PanelH"), 1.0, 10000.0, 1.0);
-	obs_properties_add_float_slider(props, S_CORNER_RADIUS, obs_module_text("LiquidGlass.CornerRadius"), 0.0,
-					 400.0, 1.0);
+	obs_properties_add_float_slider(props, S_CORNER_RADIUS, obs_module_text("LiquidGlass.CornerRadius"), 0.0, 400.0,
+					1.0);
 
 	obs_properties_add_float_slider(props, S_BLUR_AMOUNT, obs_module_text("LiquidGlass.BlurAmount"), 0.0, 64.0,
-					 0.5);
-	obs_properties_add_float_slider(props, S_REFRACTION_STRENGTH,
-					 obs_module_text("LiquidGlass.RefractionStrength"), 0.0, 80.0, 0.5);
-	obs_properties_add_float_slider(props, S_LENS_MAGNIFICATION,
-					 obs_module_text("LiquidGlass.LensMagnification"), 0.0, 1.0, 0.01);
+					0.5);
+	obs_properties_add_float_slider(props, S_REFRACTION_STRENGTH, obs_module_text("LiquidGlass.RefractionStrength"),
+					0.0, 80.0, 0.5);
+	obs_properties_add_float_slider(props, S_LENS_MAGNIFICATION, obs_module_text("LiquidGlass.LensMagnification"),
+					0.0, 1.0, 0.01);
 	obs_properties_add_float_slider(props, S_CHROMATIC_ABERRATION,
-					 obs_module_text("LiquidGlass.ChromaticAberration"), 0.0, 20.0, 0.1);
+					obs_module_text("LiquidGlass.ChromaticAberration"), 0.0, 20.0, 0.1);
 
-	obs_properties_add_float_slider(props, S_SHIMMER_SPEED, obs_module_text("LiquidGlass.ShimmerSpeed"), 0.0,
-					 5.0, 0.05);
+	obs_properties_add_float_slider(props, S_SHIMMER_SPEED, obs_module_text("LiquidGlass.ShimmerSpeed"), 0.0, 5.0,
+					0.05);
 	obs_properties_add_float_slider(props, S_SHIMMER_AMPLITUDE, obs_module_text("LiquidGlass.ShimmerAmplitude"),
-					 0.0, 20.0, 0.1);
+					0.0, 20.0, 0.1);
 
-	obs_properties_add_float_slider(props, S_SPECULAR_INTENSITY,
-					 obs_module_text("LiquidGlass.SpecularIntensity"), 0.0, 1.5, 0.01);
-	obs_properties_add_float_slider(props, S_SPECULAR_SHININESS,
-					 obs_module_text("LiquidGlass.SpecularShininess"), 1.0, 128.0, 1.0);
+	obs_properties_add_float_slider(props, S_SPECULAR_INTENSITY, obs_module_text("LiquidGlass.SpecularIntensity"),
+					0.0, 1.5, 0.01);
+	obs_properties_add_float_slider(props, S_SPECULAR_SHININESS, obs_module_text("LiquidGlass.SpecularShininess"),
+					1.0, 128.0, 1.0);
 
 	obs_properties_add_float_slider(props, S_EDGE_HIGHLIGHT_WIDTH,
-					 obs_module_text("LiquidGlass.EdgeHighlightWidth"), 0.0, 60.0, 0.5);
+					obs_module_text("LiquidGlass.EdgeHighlightWidth"), 0.0, 60.0, 0.5);
 	obs_properties_add_float_slider(props, S_EDGE_HIGHLIGHT_INTENSITY,
-					 obs_module_text("LiquidGlass.EdgeHighlightIntensity"), 0.0, 3.0, 0.02);
+					obs_module_text("LiquidGlass.EdgeHighlightIntensity"), 0.0, 3.0, 0.02);
 
 	obs_properties_add_float_slider(props, S_SHEEN_SPEED, obs_module_text("LiquidGlass.SheenSpeed"), 0.0, 2.0,
-					 0.01);
+					0.01);
 	obs_properties_add_float_slider(props, S_SHEEN_WIDTH, obs_module_text("LiquidGlass.SheenWidth"), 0.05, 1.5,
-					 0.01);
+					0.01);
 	obs_properties_add_float_slider(props, S_SHEEN_INTENSITY, obs_module_text("LiquidGlass.SheenIntensity"), 0.0,
-					 1.5, 0.01);
+					1.5, 0.01);
 
-	obs_properties_add_float_slider(props, S_CONTENT_REACTIVITY,
-					 obs_module_text("LiquidGlass.ContentReactivity"), 0.0, 1.0, 0.01);
-	obs_properties_add_float_slider(props, S_ADAPTIVE_BRIGHTNESS,
-					 obs_module_text("LiquidGlass.AdaptiveBrightness"), 0.0, 1.0, 0.01);
+	obs_properties_add_float_slider(props, S_CONTENT_REACTIVITY, obs_module_text("LiquidGlass.ContentReactivity"),
+					0.0, 1.0, 0.01);
+	obs_properties_add_float_slider(props, S_ADAPTIVE_BRIGHTNESS, obs_module_text("LiquidGlass.AdaptiveBrightness"),
+					0.0, 1.0, 0.01);
 	obs_properties_add_float_slider(props, S_VIBRANCY, obs_module_text("LiquidGlass.Vibrancy"), 0.0, 1.0, 0.01);
 
-	obs_properties_add_float_slider(props, S_SHADOW_INTENSITY, obs_module_text("LiquidGlass.ShadowIntensity"),
-					 0.0, 1.0, 0.01);
+	obs_properties_add_float_slider(props, S_SHADOW_INTENSITY, obs_module_text("LiquidGlass.ShadowIntensity"), 0.0,
+					1.0, 0.01);
 	obs_properties_add_float_slider(props, S_SHADOW_SIZE, obs_module_text("LiquidGlass.ShadowSize"), 0.0, 120.0,
-					 1.0);
+					1.0);
 
 	obs_properties_add_float_slider(props, S_NOISE_AMOUNT, obs_module_text("LiquidGlass.NoiseAmount"), 0.0, 0.15,
-					 0.002);
+					0.002);
 
 	obs_properties_add_float_slider(props, S_BORDER_WIDTH, obs_module_text("LiquidGlass.BorderWidth"), 0.0, 20.0,
-					 0.1);
+					0.1);
 	obs_properties_add_color_alpha(props, S_BORDER_COLOR, obs_module_text("LiquidGlass.BorderColor"));
 	obs_properties_add_color_alpha(props, S_TINT_COLOR, obs_module_text("LiquidGlass.TintColor"));
 
