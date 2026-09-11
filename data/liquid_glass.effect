@@ -1,0 +1,132 @@
+// Liquid Glass filter for OBS
+// Apple "Liquid Glass" style panel: blurred/refracted backdrop, specular
+// edge highlight, chromatic aberration and animated shimmer, clipped to a
+// rounded rectangle.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float2 uv_size;             // source size in pixels
+uniform float2 panel_pos;           // panel top-left, pixels
+uniform float2 panel_size;          // panel width/height, pixels
+uniform float corner_radius;        // pixels
+uniform float blur_amount;          // pixel radius of backdrop blur
+uniform float refraction_strength;  // pixel offset at the panel edge
+uniform float chromatic_aberration; // pixel offset for R/B channel split
+uniform float shimmer_speed;        // radians/sec
+uniform float shimmer_amplitude;    // pixels
+uniform float elapsed_time;         // seconds, free running
+uniform float edge_highlight_width; // pixels
+uniform float edge_highlight_intensity; // 0..2ish
+uniform float border_width;         // pixels
+uniform float4 border_color;        // rgba, premultiplied by alpha on CPU side
+uniform float4 tint_color;          // rgba
+
+sampler_state def_sampler {
+	Filter    = Linear;
+	AddressU  = Clamp;
+	AddressV  = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+// Signed distance to a rounded box centered at the origin.
+// b = half size, r = corner radius. Negative inside, positive outside.
+float sdRoundedBox(float2 p, float2 b, float r)
+{
+	float2 q = abs(p) - b + r;
+	return length(max(q, float2(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+float4 PSGlass(VertData v_in) : TARGET
+{
+	float4 orig = image.Sample(def_sampler, v_in.uv);
+
+	float2 pixel      = v_in.uv * uv_size;
+	float2 half_size  = max(panel_size * 0.5, float2(1.0, 1.0));
+	float2 center     = panel_pos + half_size;
+	float2 local      = pixel - center;
+
+	float r = min(corner_radius, min(half_size.x, half_size.y));
+	float dist = sdRoundedBox(local, half_size, r);
+
+	// Fully outside the panel (with a 1px AA band): passthrough.
+	if (dist > 1.5)
+		return orig;
+
+	float2 dir = local / max(length(local), 0.0001);
+
+	// Edge factor: 0 at panel center, 1 at the panel boundary. Real glass
+	// bends light the most near its edges, so refraction/CA/highlight are
+	// weighted by this.
+	float edge_factor = clamp((dist + r) / max(r, 1.0), 0.0, 1.0);
+	edge_factor = smoothstep(0.0, 1.0, edge_factor);
+
+	float2 shimmer = float2(
+		sin(elapsed_time * shimmer_speed + local.y * 0.05),
+		cos(elapsed_time * shimmer_speed + local.x * 0.05)
+	) * shimmer_amplitude;
+
+	float2 refract_px = dir * edge_factor * refraction_strength + shimmer;
+	float2 sample_uv  = v_in.uv + refract_px / uv_size;
+
+	// Poor man's backdrop blur: fixed 5x5 tap box blur around sample_uv,
+	// radius scaled by blur_amount (pixels).
+	float4 color = float4(0.0, 0.0, 0.0, 0.0);
+	float taps = 0.0;
+	for (int x = -2; x <= 2; x++) {
+		for (int y = -2; y <= 2; y++) {
+			float2 offs = float2(float(x), float(y)) * (blur_amount * 0.5) / uv_size;
+			color += image.Sample(def_sampler, sample_uv + offs);
+			taps += 1.0;
+		}
+	}
+	color /= max(taps, 1.0);
+
+	// Chromatic aberration: split R/B along the refraction direction.
+	float2 ca_px = dir * edge_factor * chromatic_aberration;
+	float r_chan = image.Sample(def_sampler, sample_uv + ca_px / uv_size).r;
+	float b_chan = image.Sample(def_sampler, sample_uv - ca_px / uv_size).b;
+	color.r = r_chan;
+	color.b = b_chan;
+
+	// Tint.
+	color.rgb = lerp(color.rgb, tint_color.rgb, tint_color.a);
+
+	// Specular edge highlight, biased toward a fixed top-left "light".
+	float band = 1.0 - smoothstep(0.0, max(edge_highlight_width, 0.001), abs(dist));
+	float2 light_dir = normalize(float2(-0.6, -0.8));
+	float light_bias = clamp(dot(dir, -light_dir) * 0.5 + 0.5, 0.0, 1.0);
+	float highlight = band * (0.35 + 0.65 * light_bias) * edge_highlight_intensity;
+	color.rgb += highlight;
+
+	// Border stroke.
+	float border_mask = 1.0 - smoothstep(0.0, max(border_width, 0.001), abs(dist));
+	color.rgb = lerp(color.rgb, border_color.rgb, border_mask * border_color.a);
+
+	color.a = orig.a;
+
+	// Antialias the panel boundary itself against the untouched image.
+	float panel_mix = 1.0 - smoothstep(-1.5, 1.5, dist);
+	return lerp(orig, color, panel_mix);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSGlass(v_in);
+	}
+}
