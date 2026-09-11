@@ -38,6 +38,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define S_SHEEN_SPEED "sheen_speed"
 #define S_SHEEN_WIDTH "sheen_width"
 #define S_SHEEN_INTENSITY "sheen_intensity"
+#define S_CONTENT_REACTIVITY "content_reactivity"
+#define S_ADAPTIVE_BRIGHTNESS "adaptive_brightness"
+#define S_VIBRANCY "vibrancy"
 #define S_SHADOW_INTENSITY "shadow_intensity"
 #define S_SHADOW_SIZE "shadow_size"
 #define S_NOISE_AMOUNT "noise_amount"
@@ -66,6 +69,9 @@ struct glass_filter {
 	gs_eparam_t *param_sheen_speed;
 	gs_eparam_t *param_sheen_width;
 	gs_eparam_t *param_sheen_intensity;
+	gs_eparam_t *param_content_reactivity;
+	gs_eparam_t *param_adaptive_brightness;
+	gs_eparam_t *param_vibrancy;
 	gs_eparam_t *param_shadow_intensity;
 	gs_eparam_t *param_shadow_size;
 	gs_eparam_t *param_noise_amount;
@@ -87,6 +93,9 @@ struct glass_filter {
 	float sheen_speed;
 	float sheen_width;
 	float sheen_intensity;
+	float content_reactivity;
+	float adaptive_brightness;
+	float vibrancy;
 	float shadow_intensity;
 	float shadow_size;
 	float noise_amount;
@@ -129,6 +138,10 @@ static void glass_filter_update(void *data, obs_data_t *settings)
 	filter->sheen_speed = (float)obs_data_get_double(settings, S_SHEEN_SPEED);
 	filter->sheen_width = (float)obs_data_get_double(settings, S_SHEEN_WIDTH);
 	filter->sheen_intensity = (float)obs_data_get_double(settings, S_SHEEN_INTENSITY);
+
+	filter->content_reactivity = (float)obs_data_get_double(settings, S_CONTENT_REACTIVITY);
+	filter->adaptive_brightness = (float)obs_data_get_double(settings, S_ADAPTIVE_BRIGHTNESS);
+	filter->vibrancy = (float)obs_data_get_double(settings, S_VIBRANCY);
 
 	filter->shadow_intensity = (float)obs_data_get_double(settings, S_SHADOW_INTENSITY);
 	filter->shadow_size = (float)obs_data_get_double(settings, S_SHADOW_SIZE);
@@ -178,6 +191,9 @@ static void *glass_filter_create(obs_data_t *settings, obs_source_t *source)
 	filter->param_sheen_speed = gs_effect_get_param_by_name(filter->effect, "sheen_speed");
 	filter->param_sheen_width = gs_effect_get_param_by_name(filter->effect, "sheen_width");
 	filter->param_sheen_intensity = gs_effect_get_param_by_name(filter->effect, "sheen_intensity");
+	filter->param_content_reactivity = gs_effect_get_param_by_name(filter->effect, "content_reactivity");
+	filter->param_adaptive_brightness = gs_effect_get_param_by_name(filter->effect, "adaptive_brightness");
+	filter->param_vibrancy = gs_effect_get_param_by_name(filter->effect, "vibrancy");
 	filter->param_shadow_intensity = gs_effect_get_param_by_name(filter->effect, "shadow_intensity");
 	filter->param_shadow_size = gs_effect_get_param_by_name(filter->effect, "shadow_size");
 	filter->param_noise_amount = gs_effect_get_param_by_name(filter->effect, "noise_amount");
@@ -247,6 +263,9 @@ static void glass_filter_video_render(void *data, gs_effect_t *effect)
 	gs_effect_set_float(filter->param_sheen_speed, filter->sheen_speed);
 	gs_effect_set_float(filter->param_sheen_width, filter->sheen_width);
 	gs_effect_set_float(filter->param_sheen_intensity, filter->sheen_intensity);
+	gs_effect_set_float(filter->param_content_reactivity, filter->content_reactivity);
+	gs_effect_set_float(filter->param_adaptive_brightness, filter->adaptive_brightness);
+	gs_effect_set_float(filter->param_vibrancy, filter->vibrancy);
 	gs_effect_set_float(filter->param_shadow_intensity, filter->shadow_intensity);
 	gs_effect_set_float(filter->param_shadow_size, filter->shadow_size);
 	gs_effect_set_float(filter->param_noise_amount, filter->noise_amount);
@@ -301,6 +320,12 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 	obs_properties_add_float_slider(props, S_SHEEN_INTENSITY, obs_module_text("LiquidGlass.SheenIntensity"), 0.0,
 					 1.5, 0.01);
 
+	obs_properties_add_float_slider(props, S_CONTENT_REACTIVITY,
+					 obs_module_text("LiquidGlass.ContentReactivity"), 0.0, 1.0, 0.01);
+	obs_properties_add_float_slider(props, S_ADAPTIVE_BRIGHTNESS,
+					 obs_module_text("LiquidGlass.AdaptiveBrightness"), 0.0, 1.0, 0.01);
+	obs_properties_add_float_slider(props, S_VIBRANCY, obs_module_text("LiquidGlass.Vibrancy"), 0.0, 1.0, 0.01);
+
 	obs_properties_add_float_slider(props, S_SHADOW_INTENSITY, obs_module_text("LiquidGlass.ShadowIntensity"),
 					 0.0, 1.0, 0.01);
 	obs_properties_add_float_slider(props, S_SHADOW_SIZE, obs_module_text("LiquidGlass.ShadowSize"), 0.0, 120.0,
@@ -338,9 +363,13 @@ static void glass_filter_get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, S_EDGE_HIGHLIGHT_WIDTH, 8.0);
 	obs_data_set_default_double(settings, S_EDGE_HIGHLIGHT_INTENSITY, 0.6);
 
-	obs_data_set_default_double(settings, S_SHEEN_SPEED, 0.15);
+	obs_data_set_default_double(settings, S_SHEEN_SPEED, 0.12);
 	obs_data_set_default_double(settings, S_SHEEN_WIDTH, 0.35);
-	obs_data_set_default_double(settings, S_SHEEN_INTENSITY, 0.5);
+	obs_data_set_default_double(settings, S_SHEEN_INTENSITY, 0.4);
+
+	obs_data_set_default_double(settings, S_CONTENT_REACTIVITY, 0.8);
+	obs_data_set_default_double(settings, S_ADAPTIVE_BRIGHTNESS, 0.5);
+	obs_data_set_default_double(settings, S_VIBRANCY, 0.2);
 
 	obs_data_set_default_double(settings, S_SHADOW_INTENSITY, 0.35);
 	obs_data_set_default_double(settings, S_SHADOW_SIZE, 28.0);
