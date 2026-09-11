@@ -20,12 +20,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 #include <graphics/vec2.h>
 #include <graphics/vec4.h>
+#include <util/threading.h>
+#include <util/platform.h>
 #include <math.h>
+#include <string.h>
 
-#define S_PANEL_X "panel_x"
-#define S_PANEL_Y "panel_y"
-#define S_PANEL_W "panel_w"
-#define S_PANEL_H "panel_h"
+#ifdef _WIN32
+#include <winhttp.h>
+#endif
+
+#define S_ZAPPIFY_ENABLED "zappify_enabled"
+#define S_ZAPPIFY_PORT "zappify_port"
+#define S_POLL_INTERVAL_MS "poll_interval_ms"
 #define S_CORNER_RADIUS "corner_radius"
 #define S_BLUR_AMOUNT "blur_amount"
 #define S_REFRACTION_STRENGTH "refraction_strength"
@@ -50,13 +56,56 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define S_BORDER_COLOR "border_color"
 #define S_TINT_COLOR "tint_color"
 
+#define MAX_PANELS 8
+
+/*
+ * Zappify polling: one background thread shared by every filter instance
+ * (a user typically attaches this filter to several scenes, and they all
+ * want the same live state -- N independent pollers hitting the same local
+ * endpoint would be wasteful and pointless). glass_zappify_poller_start()/
+ * _stop() are called once from plugin-main.c's obs_module_load()/unload();
+ * glass_filter_video_render() just reads the shared cache below.
+ *
+ * Per-instance settings (port/interval/enabled) all feed into this single
+ * shared poller -- whichever filter instance was updated most recently wins.
+ * In practice a user runs one Zappify instance, so every filter attached to
+ * it uses the same values anyway.
+ */
+struct zappify_state {
+	pthread_mutex_t lock;
+	/* xy = top-left, zw = size; all as 0..1 FRACTIONS of the OBS canvas --
+	 * Zappify has no notion of this filter's per-instance render target size,
+	 * so it never sends pixels. Converted to pixels per-instance below, right
+	 * before pushing into the shader, using that instance's own uv_size. */
+	struct vec4 panels[MAX_PANELS];
+	int panel_count;
+};
+
+/* lock is initialized in glass_zappify_poller_start() via pthread_mutex_init()
+ * -- not a static PTHREAD_MUTEX_INITIALIZER, since OBS's Windows pthread shim
+ * doesn't guarantee that's valid as a static initializer. */
+static struct zappify_state g_zappify_state = {
+	.panel_count = 0,
+};
+
+static pthread_t g_zappify_thread;
+static os_event_t *g_zappify_stop_event = NULL;
+static volatile bool g_zappify_thread_running = false;
+
+/* Poller config, updated (non-atomically but benignly -- worst case one
+ * stale read for a single poll cycle) from whichever filter instance's
+ * glass_filter_update() ran most recently. */
+static volatile bool g_zappify_enabled = true;
+static volatile long g_zappify_port = 3000;
+static volatile long g_zappify_poll_interval_ms = 200;
+
 struct glass_filter {
 	obs_source_t *source;
 	gs_effect_t *effect;
 
 	gs_eparam_t *param_uv_size;
-	gs_eparam_t *param_panel_pos;
-	gs_eparam_t *param_panel_size;
+	gs_eparam_t *param_panels;
+	gs_eparam_t *param_panel_count;
 	gs_eparam_t *param_corner_radius;
 	gs_eparam_t *param_blur_amount;
 	gs_eparam_t *param_refraction_strength;
@@ -82,7 +131,6 @@ struct glass_filter {
 	gs_eparam_t *param_border_color;
 	gs_eparam_t *param_tint_color;
 
-	float panel_x, panel_y, panel_w, panel_h;
 	float corner_radius;
 	float blur_amount;
 	float refraction_strength;
@@ -120,10 +168,13 @@ static void glass_filter_update(void *data, obs_data_t *settings)
 {
 	struct glass_filter *filter = data;
 
-	filter->panel_x = (float)obs_data_get_double(settings, S_PANEL_X);
-	filter->panel_y = (float)obs_data_get_double(settings, S_PANEL_Y);
-	filter->panel_w = (float)obs_data_get_double(settings, S_PANEL_W);
-	filter->panel_h = (float)obs_data_get_double(settings, S_PANEL_H);
+	/* Shared Zappify-poller config -- see the comment on struct zappify_state.
+	 * Whichever filter instance is updated most recently wins; fine in
+	 * practice since every instance points at the same local Zappify. */
+	g_zappify_enabled = obs_data_get_bool(settings, S_ZAPPIFY_ENABLED);
+	g_zappify_port = (long)obs_data_get_int(settings, S_ZAPPIFY_PORT);
+	g_zappify_poll_interval_ms = (long)obs_data_get_int(settings, S_POLL_INTERVAL_MS);
+
 	filter->corner_radius = (float)obs_data_get_double(settings, S_CORNER_RADIUS);
 
 	filter->blur_amount = (float)obs_data_get_double(settings, S_BLUR_AMOUNT);
@@ -179,8 +230,8 @@ static void *glass_filter_create(obs_data_t *settings, obs_source_t *source)
 	}
 
 	filter->param_uv_size = gs_effect_get_param_by_name(filter->effect, "uv_size");
-	filter->param_panel_pos = gs_effect_get_param_by_name(filter->effect, "panel_pos");
-	filter->param_panel_size = gs_effect_get_param_by_name(filter->effect, "panel_size");
+	filter->param_panels = gs_effect_get_param_by_name(filter->effect, "panels");
+	filter->param_panel_count = gs_effect_get_param_by_name(filter->effect, "panel_count");
 	filter->param_corner_radius = gs_effect_get_param_by_name(filter->effect, "corner_radius");
 	filter->param_blur_amount = gs_effect_get_param_by_name(filter->effect, "blur_amount");
 	filter->param_refraction_strength = gs_effect_get_param_by_name(filter->effect, "refraction_strength");
@@ -246,38 +297,53 @@ static void glass_filter_video_render(void *data, gs_effect_t *effect)
 	struct vec2 uv_size;
 	vec2_set(&uv_size, (float)width, (float)height);
 
-	// Keep the panel fully inside the actual frame. Without this, panel
-	// coordinates typed for one canvas size (or a filter target smaller
-	// than expected, e.g. a cropped/lower-res source) can push the right
-	// or bottom edge past the frame boundary -- the rounded corner there
-	// then never gets rasterized at all, and what's left looks like a
-	// flat, square cut instead of a round one. Sliding the panel inward
-	// (or shrinking it, only if it's larger than the frame) guarantees
-	// every corner is always actually on-screen.
-	float panel_w = filter->panel_w;
-	float panel_h = filter->panel_h;
-	float panel_x = filter->panel_x;
-	float panel_y = filter->panel_y;
+	// Snapshot the shared Zappify state (fractions 0..1) and convert each
+	// panel to this instance's own pixel space. Keep every panel fully
+	// inside the actual frame -- without this, a panel that touches or
+	// crosses the frame boundary (e.g. a module partially off the edge of a
+	// mismatched canvas size) can push past it: the rounded corner there
+	// then never gets rasterized at all, and what's left looks like a flat,
+	// square cut instead of a round one. Sliding it inward (or shrinking it,
+	// only if it's larger than the frame) guarantees every corner is
+	// actually on-screen.
+	struct vec4 panels_px[MAX_PANELS] = {0};
+	int panel_count = 0;
+
+	pthread_mutex_lock(&g_zappify_state.lock);
+	panel_count = g_zappify_state.panel_count;
+	if (panel_count > MAX_PANELS)
+		panel_count = MAX_PANELS;
+	memcpy(panels_px, g_zappify_state.panels, sizeof(struct vec4) * (size_t)panel_count);
+	pthread_mutex_unlock(&g_zappify_state.lock);
+
 	if (width > 0 && height > 0) {
-		if (panel_w > (float)width)
-			panel_w = (float)width;
-		if (panel_h > (float)height)
-			panel_h = (float)height;
-		float max_x = (float)width - panel_w;
-		float max_y = (float)height - panel_h;
-		panel_x = fmaxf(0.0f, fminf(panel_x, max_x));
-		panel_y = fmaxf(0.0f, fminf(panel_y, max_y));
+		for (int i = 0; i < panel_count; i++) {
+			float panel_x = panels_px[i].x * (float)width;
+			float panel_y = panels_px[i].y * (float)height;
+			float panel_w = panels_px[i].z * (float)width;
+			float panel_h = panels_px[i].w * (float)height;
+
+			if (panel_w > (float)width)
+				panel_w = (float)width;
+			if (panel_h > (float)height)
+				panel_h = (float)height;
+			float max_x = (float)width - panel_w;
+			float max_y = (float)height - panel_h;
+			panel_x = fmaxf(0.0f, fminf(panel_x, max_x));
+			panel_y = fmaxf(0.0f, fminf(panel_y, max_y));
+
+			panels_px[i].x = panel_x;
+			panels_px[i].y = panel_y;
+			panels_px[i].z = panel_w;
+			panels_px[i].w = panel_h;
+		}
+	} else {
+		panel_count = 0;
 	}
 
-	struct vec2 pos;
-	vec2_set(&pos, panel_x, panel_y);
-
-	struct vec2 size;
-	vec2_set(&size, panel_w, panel_h);
-
 	gs_effect_set_vec2(filter->param_uv_size, &uv_size);
-	gs_effect_set_vec2(filter->param_panel_pos, &pos);
-	gs_effect_set_vec2(filter->param_panel_size, &size);
+	gs_effect_set_val(filter->param_panels, panels_px, sizeof(struct vec4) * MAX_PANELS);
+	gs_effect_set_int(filter->param_panel_count, panel_count);
 	gs_effect_set_float(filter->param_corner_radius, filter->corner_radius);
 	gs_effect_set_float(filter->param_blur_amount, filter->blur_amount);
 	gs_effect_set_float(filter->param_refraction_strength, filter->refraction_strength);
@@ -314,10 +380,10 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 
 	obs_properties_t *props = obs_properties_create();
 
-	obs_properties_add_float(props, S_PANEL_X, obs_module_text("LiquidGlass.PanelX"), -10000.0, 10000.0, 1.0);
-	obs_properties_add_float(props, S_PANEL_Y, obs_module_text("LiquidGlass.PanelY"), -10000.0, 10000.0, 1.0);
-	obs_properties_add_float(props, S_PANEL_W, obs_module_text("LiquidGlass.PanelW"), 1.0, 10000.0, 1.0);
-	obs_properties_add_float(props, S_PANEL_H, obs_module_text("LiquidGlass.PanelH"), 1.0, 10000.0, 1.0);
+	obs_properties_add_bool(props, S_ZAPPIFY_ENABLED, obs_module_text("LiquidGlass.ZappifyEnabled"));
+	obs_properties_add_int(props, S_ZAPPIFY_PORT, obs_module_text("LiquidGlass.ZappifyPort"), 1, 65535, 1);
+	obs_properties_add_int(props, S_POLL_INTERVAL_MS, obs_module_text("LiquidGlass.PollIntervalMs"), 50, 5000, 10);
+
 	obs_properties_add_float_slider(props, S_CORNER_RADIUS, obs_module_text("LiquidGlass.CornerRadius"), 0.0, 400.0,
 					1.0);
 
@@ -376,10 +442,9 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 
 static void glass_filter_get_defaults(obs_data_t *settings)
 {
-	obs_data_set_default_double(settings, S_PANEL_X, 120.0);
-	obs_data_set_default_double(settings, S_PANEL_Y, 700.0);
-	obs_data_set_default_double(settings, S_PANEL_W, 640.0);
-	obs_data_set_default_double(settings, S_PANEL_H, 260.0);
+	obs_data_set_default_bool(settings, S_ZAPPIFY_ENABLED, true);
+	obs_data_set_default_int(settings, S_ZAPPIFY_PORT, 3000);
+	obs_data_set_default_int(settings, S_POLL_INTERVAL_MS, 200);
 	obs_data_set_default_double(settings, S_CORNER_RADIUS, 56.0);
 
 	obs_data_set_default_double(settings, S_BLUR_AMOUNT, 24.0);
@@ -412,6 +477,214 @@ static void glass_filter_get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, S_BORDER_WIDTH, 1.5);
 	obs_data_set_default_int(settings, S_BORDER_COLOR, 0x40FFFFFF);
 	obs_data_set_default_int(settings, S_TINT_COLOR, 0x00FFFFFF);
+}
+
+/* ===================== Zappify state poller ===================== */
+
+#ifdef _WIN32
+
+static void glass_zappify_clear_panels(void)
+{
+	pthread_mutex_lock(&g_zappify_state.lock);
+	g_zappify_state.panel_count = 0;
+	pthread_mutex_unlock(&g_zappify_state.lock);
+}
+
+/* One blocking GET against Zappify's local API, parsed with libobs's own
+ * JSON reader (no third-party JSON dependency). Any failure just clears the
+ * panel list for this cycle -- Zappify not running is a normal, common state
+ * (the user hasn't started the app, or closed it), never a crash. */
+static void glass_zappify_poll_once(void)
+{
+	if (!g_zappify_enabled) {
+		glass_zappify_clear_panels();
+		return;
+	}
+
+	long port = g_zappify_port;
+	if (port < 1 || port > 65535)
+		port = 3000;
+
+	HINTERNET hSession = WinHttpOpen(L"obs-liquid-glass/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
+					 WINHTTP_NO_PROXY_BYPASS, 0);
+	if (!hSession) {
+		glass_zappify_clear_panels();
+		return;
+	}
+
+	/* Keep every poll cycle snappy even if Zappify hangs or the port is
+	 * firewalled -- this must never stall the shared poller thread for
+	 * longer than a cycle or two. */
+	WinHttpSetTimeouts(hSession, 1000, 1000, 1500, 1500);
+
+	HINTERNET hConnect = WinHttpConnect(hSession, L"127.0.0.1", (INTERNET_PORT)port, 0);
+	if (!hConnect) {
+		WinHttpCloseHandle(hSession);
+		glass_zappify_clear_panels();
+		return;
+	}
+
+	HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", L"/api/glass-blur/state", NULL, WINHTTP_NO_REFERER,
+						WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+	if (!hRequest) {
+		WinHttpCloseHandle(hConnect);
+		WinHttpCloseHandle(hSession);
+		glass_zappify_clear_panels();
+		return;
+	}
+
+	bool ok = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+		  WinHttpReceiveResponse(hRequest, NULL);
+
+	char *body = NULL;
+	size_t body_len = 0;
+
+	if (ok) {
+		for (;;) {
+			DWORD avail = 0;
+			if (!WinHttpQueryDataAvailable(hRequest, &avail) || avail == 0)
+				break;
+
+			char *grown = brealloc(body, body_len + (size_t)avail + 1);
+			body = grown;
+
+			DWORD did_read = 0;
+			if (!WinHttpReadData(hRequest, body + body_len, avail, &did_read)) {
+				break;
+			}
+			body_len += did_read;
+			body[body_len] = '\0';
+			if (did_read == 0)
+				break;
+		}
+	}
+
+	WinHttpCloseHandle(hRequest);
+	WinHttpCloseHandle(hConnect);
+	WinHttpCloseHandle(hSession);
+
+	if (!ok || !body || body_len == 0) {
+		bfree(body);
+		glass_zappify_clear_panels();
+		return;
+	}
+
+	obs_data_t *root = obs_data_create_from_json(body);
+	bfree(body);
+
+	if (!root) {
+		glass_zappify_clear_panels();
+		return;
+	}
+
+	struct vec4 parsed[MAX_PANELS] = {0};
+	int parsed_count = 0;
+
+	if (obs_data_get_bool(root, "enabled")) {
+		obs_data_array_t *arr = obs_data_get_array(root, "panels");
+		if (arr) {
+			size_t count = obs_data_array_count(arr);
+			if (count > MAX_PANELS)
+				count = MAX_PANELS;
+
+			for (size_t i = 0; i < count; i++) {
+				obs_data_t *item = obs_data_array_item(arr, i);
+				if (item) {
+					parsed[i].x = (float)obs_data_get_double(item, "x");
+					parsed[i].y = (float)obs_data_get_double(item, "y");
+					parsed[i].z = (float)obs_data_get_double(item, "w");
+					parsed[i].w = (float)obs_data_get_double(item, "h");
+					obs_data_release(item);
+				}
+			}
+			parsed_count = (int)count;
+			obs_data_array_release(arr);
+		}
+	}
+
+	obs_data_release(root);
+
+	pthread_mutex_lock(&g_zappify_state.lock);
+	memcpy(g_zappify_state.panels, parsed, sizeof(parsed));
+	g_zappify_state.panel_count = parsed_count;
+	pthread_mutex_unlock(&g_zappify_state.lock);
+}
+
+#endif /* _WIN32 */
+
+static void *glass_zappify_poll_thread(void *unused)
+{
+	UNUSED_PARAMETER(unused);
+	os_set_thread_name("glass-zappify-poll");
+
+#ifdef _WIN32
+	while (g_zappify_thread_running) {
+		glass_zappify_poll_once();
+
+		long interval = g_zappify_poll_interval_ms;
+		if (interval < 50)
+			interval = 50;
+
+		/* Returns 0 if the stop event fired, ETIMEDOUT if the interval
+		 * elapsed with no stop request -- either way this doubles as our
+		 * interruptible sleep. */
+		if (os_event_timedwait(g_zappify_stop_event, (unsigned long)interval) == 0)
+			break;
+	}
+#else
+	/* Only Windows ships a HTTP client (see the #ifdef _WIN32 block above) --
+	 * this plugin only targets Windows. On any other platform the panel
+	 * list simply stays empty; just wait here for a clean, joinable exit. */
+	os_event_wait(g_zappify_stop_event);
+#endif
+
+	return NULL;
+}
+
+/* Called once from plugin-main.c's obs_module_load(). Shared by every filter
+ * instance -- see the comment on struct zappify_state above. */
+void glass_zappify_poller_start(void)
+{
+	if (g_zappify_thread_running)
+		return;
+
+	pthread_mutex_init(&g_zappify_state.lock, NULL);
+
+	if (os_event_init(&g_zappify_stop_event, OS_EVENT_TYPE_MANUAL) != 0) {
+		obs_log(LOG_ERROR, "Zappify poller: failed to create stop event");
+		pthread_mutex_destroy(&g_zappify_state.lock);
+		return;
+	}
+
+	g_zappify_thread_running = true;
+	if (pthread_create(&g_zappify_thread, NULL, glass_zappify_poll_thread, NULL) != 0) {
+		obs_log(LOG_ERROR, "Zappify poller: failed to start thread");
+		g_zappify_thread_running = false;
+		os_event_destroy(g_zappify_stop_event);
+		g_zappify_stop_event = NULL;
+		pthread_mutex_destroy(&g_zappify_state.lock);
+	}
+}
+
+/* Called once from plugin-main.c's obs_module_unload(). Joins (never
+ * detaches) the poll thread so it can't touch freed state during shutdown. */
+void glass_zappify_poller_stop(void)
+{
+	if (!g_zappify_thread_running)
+		return;
+
+	g_zappify_thread_running = false;
+	if (g_zappify_stop_event)
+		os_event_signal(g_zappify_stop_event);
+
+	pthread_join(g_zappify_thread, NULL);
+
+	if (g_zappify_stop_event) {
+		os_event_destroy(g_zappify_stop_event);
+		g_zappify_stop_event = NULL;
+	}
+
+	pthread_mutex_destroy(&g_zappify_state.lock);
 }
 
 struct obs_source_info liquid_glass_filter_info = {

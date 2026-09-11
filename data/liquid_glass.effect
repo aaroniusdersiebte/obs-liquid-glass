@@ -10,9 +10,9 @@ uniform float4x4 ViewProj;
 uniform texture2d image;
 
 uniform float2 uv_size;             // source size in pixels
-uniform float2 panel_pos;           // panel top-left, pixels
-uniform float2 panel_size;          // panel width/height, pixels
-uniform float corner_radius;        // pixels
+uniform float4 panels[8];           // xy = panel top-left (pixels), zw = panel width/height (pixels)
+uniform int panel_count;            // how many entries in `panels` are valid (0..8)
+uniform float corner_radius;        // pixels, shared by every panel
 
 uniform float blur_amount;          // pixel radius of backdrop blur
 uniform float refraction_strength;  // pixel offset at the panel edge
@@ -82,13 +82,40 @@ float4 PSGlass(VertData v_in) : TARGET
 {
 	float4 orig = image.Sample(def_sampler, v_in.uv);
 
-	float2 pixel     = v_in.uv * uv_size;
-	float2 half_size = max(panel_size * 0.5, float2(1.0, 1.0));
-	float2 center    = panel_pos + half_size;
-	float2 local     = pixel - center;
+	float2 pixel = v_in.uv * uv_size;
 
-	float r = min(corner_radius, min(half_size.x, half_size.y));
-	float d = sdRoundedBox(local, half_size, r);
+	// Union of every active panel's rounded-box SDF: find the nearest one and
+	// keep its geometry (local/half_size/r) for everything downstream. With
+	// panel_count == 0, d stays at its huge sentinel value and the early-out
+	// below returns the untouched backdrop, so "no panels" just means "no blur".
+	float2 half_size = float2(1.0, 1.0);
+	float2 center    = float2(0.0, 0.0);
+	float2 local     = pixel;
+	float r = 0.0;
+	float d = 1e9;
+
+	for (int i = 0; i < 8; i++) {
+		if (i >= panel_count)
+			continue;
+
+		// Indexing the uniform array and swizzling in the same expression
+		// (panels[i].zw) trips up libobs's effect-to-GLSL translator --
+		// go through a plain local first.
+		float4 p    = panels[i];
+		float2 p_hs = max(p.zw * 0.5, float2(1.0, 1.0));
+		float2 p_c  = p.xy + p_hs;
+		float2 p_l  = pixel - p_c;
+		float p_r   = min(corner_radius, min(p_hs.x, p_hs.y));
+		float p_d   = sdRoundedBox(p_l, p_hs, p_r);
+
+		if (p_d < d) {
+			d = p_d;
+			local = p_l;
+			half_size = p_hs;
+			center = p_c;
+			r = p_r;
+		}
+	}
 
 	float shadow_max = max(shadow_size, 0.001);
 	if (d > shadow_max + 2.0)

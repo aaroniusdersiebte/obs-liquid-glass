@@ -26,11 +26,13 @@ OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 bool obs_module_load(void)
 {
 	obs_register_source(&liquid_glass_filter_info);
+	glass_zappify_poller_start();
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
 	return true;
 }
 
 void obs_module_unload(void)
 {
+	glass_zappify_poller_stop();
 	obs_log(LOG_INFO, "plugin unloaded");
 }
