@@ -62,7 +62,7 @@ unchanged).
 
 ## Installing a built plugin on Windows 11
 
-Copy the built `liquid-glass.dll` (and the `data/` folder contents) into:
+Copy the built `obs-liquid-glass.dll` (and the `data/` folder contents) into:
 
 ```
 %ProgramFiles%\obs-studio\obs-plugins\64bit\
