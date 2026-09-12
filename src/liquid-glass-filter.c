@@ -34,6 +34,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define S_ZAPPIFY_ENABLED "zappify_enabled"
 #define S_ZAPPIFY_PORT "zappify_port"
 #define S_POLL_INTERVAL_MS "poll_interval_ms"
+#define S_OFFSET_X "offset_x"
+#define S_OFFSET_Y "offset_y"
 #define S_CORNER_RADIUS "corner_radius"
 #define S_BLUR_AMOUNT "blur_amount"
 #define S_REFRACTION_STRENGTH "refraction_strength"
@@ -133,6 +135,14 @@ struct glass_filter {
 	gs_eparam_t *param_border_color;
 	gs_eparam_t *param_tint_color;
 
+	/* Manueller Fein-Offset (Bruch der Canvas, nicht Pixel -- aufloesungsunabhaengig).
+	 * Zappify liefert bereits kanonisch richtige Fraktionen; dieser Offset gleicht nur
+	 * aus, wenn die vom Nutzer gewaehlte Ziel-Quelle/-Gruppe in OBS selbst nicht exakt
+	 * 1:1 deckungsgleich mit der Canvas positioniert/skaliert ist (z.B. eine Gruppe,
+	 * deren Bounding-Box beim Erstellen nicht exakt auf Vollbild gesetzt wurde). */
+	float offset_x;
+	float offset_y;
+
 	float corner_radius;
 	float blur_amount;
 	float refraction_strength;
@@ -176,6 +186,9 @@ static void glass_filter_update(void *data, obs_data_t *settings)
 	g_zappify_enabled = obs_data_get_bool(settings, S_ZAPPIFY_ENABLED);
 	g_zappify_port = (long)obs_data_get_int(settings, S_ZAPPIFY_PORT);
 	g_zappify_poll_interval_ms = (long)obs_data_get_int(settings, S_POLL_INTERVAL_MS);
+
+	filter->offset_x = (float)obs_data_get_double(settings, S_OFFSET_X);
+	filter->offset_y = (float)obs_data_get_double(settings, S_OFFSET_Y);
 
 	filter->corner_radius = (float)obs_data_get_double(settings, S_CORNER_RADIUS);
 
@@ -320,8 +333,15 @@ static void glass_filter_video_render(void *data, gs_effect_t *effect)
 
 	if (width > 0 && height > 0) {
 		for (int i = 0; i < panel_count; i++) {
-			float panel_x = panels_px[i].x * (float)width;
-			float panel_y = panels_px[i].y * (float)height;
+			// Manueller Fein-Offset zuerst (Bruch-Raum, aufloesungsunabhaengig),
+			// danach erst in Pixel dieser Instanz umrechnen -- gleicht aus, wenn
+			// die Ziel-Quelle/-Gruppe in OBS nicht exakt deckungsgleich mit der
+			// Canvas liegt, auf der Zappify seine Fraktionen berechnet.
+			float fx = panels_px[i].x + filter->offset_x;
+			float fy = panels_px[i].y + filter->offset_y;
+
+			float panel_x = fx * (float)width;
+			float panel_y = fy * (float)height;
 			float panel_w = panels_px[i].z * (float)width;
 			float panel_h = panels_px[i].w * (float)height;
 
@@ -386,6 +406,9 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 	obs_properties_add_int(props, S_ZAPPIFY_PORT, obs_module_text("LiquidGlass.ZappifyPort"), 1, 65535, 1);
 	obs_properties_add_int(props, S_POLL_INTERVAL_MS, obs_module_text("LiquidGlass.PollIntervalMs"), 50, 5000, 10);
 
+	obs_properties_add_float_slider(props, S_OFFSET_X, obs_module_text("LiquidGlass.OffsetX"), -0.2, 0.2, 0.005);
+	obs_properties_add_float_slider(props, S_OFFSET_Y, obs_module_text("LiquidGlass.OffsetY"), -0.2, 0.2, 0.005);
+
 	obs_properties_add_float_slider(props, S_CORNER_RADIUS, obs_module_text("LiquidGlass.CornerRadius"), 0.0, 400.0,
 					1.0);
 
@@ -447,6 +470,8 @@ static void glass_filter_get_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, S_ZAPPIFY_ENABLED, true);
 	obs_data_set_default_int(settings, S_ZAPPIFY_PORT, 3000);
 	obs_data_set_default_int(settings, S_POLL_INTERVAL_MS, 200);
+	obs_data_set_default_double(settings, S_OFFSET_X, 0.0);
+	obs_data_set_default_double(settings, S_OFFSET_Y, 0.0);
 	obs_data_set_default_double(settings, S_CORNER_RADIUS, 56.0);
 
 	obs_data_set_default_double(settings, S_BLUR_AMOUNT, 24.0);
