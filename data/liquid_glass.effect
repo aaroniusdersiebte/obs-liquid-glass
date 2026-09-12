@@ -160,35 +160,51 @@ float4 PSGlass(VertData v_in) : TARGET
 	sample_uv = lerp(sample_uv, center_uv + (sample_uv - center_uv) * (1.0 - bulge), bulge * 0.85);
 
 	// Backdrop blur: gaussian-weighted 5x5 taps around the refracted sample.
-	float4 color = float4(0.0, 0.0, 0.0, 0.0);
-	float wsum = 0.0;
-	for (int x = -2; x <= 2; x++) {
-		for (int y = -2; y <= 2; y++) {
-			float2 offs = float2(float(x), float(y)) * (blur_amount * 0.5) / uv_size;
-			float w = exp(-float(x * x + y * y) * 0.22);
-			color += image.Sample(def_sampler, sample_uv + offs) * w;
-			wsum += w;
+	// Skipped entirely when blur is effectively off (blur_amount ~0, a common
+	// "just refract, no blur" setup) -- saves 25 texture samples per pixel.
+	float4 color;
+	if (blur_amount > 0.01) {
+		color = float4(0.0, 0.0, 0.0, 0.0);
+		float wsum = 0.0;
+		for (int x = -2; x <= 2; x++) {
+			for (int y = -2; y <= 2; y++) {
+				float2 offs = float2(float(x), float(y)) * (blur_amount * 0.5) / uv_size;
+				float w = exp(-float(x * x + y * y) * 0.22);
+				color += image.Sample(def_sampler, sample_uv + offs) * w;
+				wsum += w;
+			}
 		}
+		color /= max(wsum, 0.0001);
+	} else {
+		color = image.Sample(def_sampler, sample_uv);
 	}
-	color /= max(wsum, 0.0001);
 
-	// Chromatic aberration along the same lens direction.
-	float2 ca_px = grad * domeFalloff * chromatic_aberration;
-	color.r = image.Sample(def_sampler, sample_uv + ca_px / uv_size).r;
-	color.b = image.Sample(def_sampler, sample_uv - ca_px / uv_size).b;
+	// Chromatic aberration along the same lens direction -- skipped when
+	// disabled (also common), saving 2 more texture samples per pixel.
+	if (chromatic_aberration > 0.001) {
+		float2 ca_px = grad * domeFalloff * chromatic_aberration;
+		color.r = image.Sample(def_sampler, sample_uv + ca_px / uv_size).r;
+		color.b = image.Sample(def_sampler, sample_uv - ca_px / uv_size).b;
+	}
 
 	// Probe the *actual* backdrop under the panel: its local brightness and
 	// the direction it gets brighter in. This is what makes the glass feel
 	// like it's really looking through to the scene instead of playing a
-	// canned animation over whatever happens to be behind it.
+	// canned animation over whatever happens to be behind it. Only needed
+	// (and only sampled -- 4 extra taps) when content_reactivity is actually
+	// used below; lumaGradMag naturally ends up 0 otherwise, same result as
+	// before this was made conditional.
 	float3 luma_w = float3(0.299, 0.587, 0.114);
-	float2 probe = float2(14.0, 14.0) / uv_size;
 	float lumaC = dot(color.rgb, luma_w);
-	float lumaR = dot(image.Sample(def_sampler, sample_uv + float2(probe.x, 0.0)).rgb, luma_w);
-	float lumaL = dot(image.Sample(def_sampler, sample_uv - float2(probe.x, 0.0)).rgb, luma_w);
-	float lumaD = dot(image.Sample(def_sampler, sample_uv + float2(0.0, probe.y)).rgb, luma_w);
-	float lumaU = dot(image.Sample(def_sampler, sample_uv - float2(0.0, probe.y)).rgb, luma_w);
-	float2 lumaGrad = float2(lumaR - lumaL, lumaD - lumaU);
+	float2 lumaGrad = float2(0.0, 0.0);
+	if (content_reactivity > 0.001) {
+		float2 probe = float2(14.0, 14.0) / uv_size;
+		float lumaR = dot(image.Sample(def_sampler, sample_uv + float2(probe.x, 0.0)).rgb, luma_w);
+		float lumaL = dot(image.Sample(def_sampler, sample_uv - float2(probe.x, 0.0)).rgb, luma_w);
+		float lumaD = dot(image.Sample(def_sampler, sample_uv + float2(0.0, probe.y)).rgb, luma_w);
+		float lumaU = dot(image.Sample(def_sampler, sample_uv - float2(0.0, probe.y)).rgb, luma_w);
+		lumaGrad = float2(lumaR - lumaL, lumaD - lumaU);
+	}
 	float lumaGradMag = length(lumaGrad);
 
 	color.rgb = lerp(color.rgb, tint_color.rgb, tint_color.a);

@@ -6,6 +6,13 @@ chromatic aberration, a specular edge highlight and an optional animated
 shimmer. Apply it to a scene (or a source) to get a floating glass panel
 over your layout.
 
+**Free and open source (GPLv2+)**, works entirely standalone — no other
+software required. It optionally syncs its panel position live from
+[Zappify](https://aaronius.com) (a separate, commercial streaming-overlay
+app by the same author) when that's installed and running, but that's purely
+optional icing: with Zappify absent, disabled, or unlicensed, the filter
+simply uses the manual panel position below instead of doing nothing.
+
 ## Adding the filter
 
 1. Right-click a scene or source → **Filters**.
@@ -16,8 +23,10 @@ over your layout.
 
 | Property | Description |
 |---|---|
-| Panel X / Y | Top-left corner of the glass panel, in pixels (base/canvas resolution). |
-| Panel Width / Height | Size of the panel, in pixels. |
+| Follow Zappify | When on, tries to fetch panel position(s) live from a locally running Zappify instance. Falls back to the manual panel below whenever Zappify has nothing to report. |
+| Zappify Port / Poll Interval | Connection details for the optional Zappify sync — irrelevant if you don't use Zappify. |
+| Fine-Tune Offset X / Y | Small resolution-independent nudge applied on top of Zappify's panel position, for alignment edge cases. |
+| Manual Panel X / Y / Width / Height | Top-left position and size of the glass panel, as a **fraction (0–1) of the canvas** — this is what positions the panel when Zappify isn't providing one, i.e. in fully standalone use. Set Width or Height to 0 to hide the panel entirely. |
 | Corner Radius | Rounding of the panel corners. |
 | Backdrop Blur | Box-blur radius applied to the content behind the glass. |
 | Refraction Strength | How far the backdrop is displaced near the panel edges (lensing). |
@@ -30,6 +39,10 @@ over your layout.
 All of this lives in a single shader: `data/liquid_glass.effect`. The C side
 (`src/liquid-glass-filter.c`) only wires up OBS properties and uploads the
 uniforms every frame.
+
+## Author
+
+Liquid Glass is made by **Aaronius** — [aaronius.com](https://aaronius.com).
 
 ## Building
 

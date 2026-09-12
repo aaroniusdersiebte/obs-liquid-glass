@@ -36,6 +36,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define S_POLL_INTERVAL_MS "poll_interval_ms"
 #define S_OFFSET_X "offset_x"
 #define S_OFFSET_Y "offset_y"
+#define S_PANEL_X "panel_x"
+#define S_PANEL_Y "panel_y"
+#define S_PANEL_W "panel_w"
+#define S_PANEL_H "panel_h"
+#define S_ABOUT_INFO "about_zappify"
 #define S_CORNER_RADIUS "corner_radius"
 #define S_BLUR_AMOUNT "blur_amount"
 #define S_REFRACTION_STRENGTH "refraction_strength"
@@ -143,6 +148,16 @@ struct glass_filter {
 	float offset_x;
 	float offset_y;
 
+	/* Manuelles Standalone-Panel (Bruch der Canvas 0..1, top-left+size --
+	 * gleiches Koordinatensystem wie die Zappify-Panels). Greift nur, wenn
+	 * der geteilte Zappify-Zustand gerade 0 Panels liefert (Zappify aus,
+	 * nicht erreichbar, oder kein Modul aktiv) -- siehe glass_filter_video_render.
+	 * Macht den Filter auch komplett ohne Zappify sofort sichtbar nutzbar. */
+	float panel_x;
+	float panel_y;
+	float panel_w;
+	float panel_h;
+
 	float corner_radius;
 	float blur_amount;
 	float refraction_strength;
@@ -189,6 +204,11 @@ static void glass_filter_update(void *data, obs_data_t *settings)
 
 	filter->offset_x = (float)obs_data_get_double(settings, S_OFFSET_X);
 	filter->offset_y = (float)obs_data_get_double(settings, S_OFFSET_Y);
+
+	filter->panel_x = (float)obs_data_get_double(settings, S_PANEL_X);
+	filter->panel_y = (float)obs_data_get_double(settings, S_PANEL_Y);
+	filter->panel_w = (float)obs_data_get_double(settings, S_PANEL_W);
+	filter->panel_h = (float)obs_data_get_double(settings, S_PANEL_H);
 
 	filter->corner_radius = (float)obs_data_get_double(settings, S_CORNER_RADIUS);
 
@@ -331,6 +351,17 @@ static void glass_filter_video_render(void *data, gs_effect_t *effect)
 	memcpy(panels_px, g_zappify_state.panels, sizeof(struct vec4) * (size_t)panel_count);
 	pthread_mutex_unlock(&g_zappify_state.lock);
 
+	// Standalone fallback: whenever Zappify isn't delivering any panels right
+	// now (not running, "Follow Zappify" off, no license, or simply no module
+	// currently active), fall back to the one manually positioned panel below
+	// -- this is what makes the filter fully usable on its own, with no
+	// Zappify installed at all. A zero-sized manual panel (w or h <= 0) just
+	// means "nothing to show", same as an empty Zappify snapshot.
+	if (panel_count == 0 && filter->panel_w > 0.0f && filter->panel_h > 0.0f) {
+		vec4_set(&panels_px[0], filter->panel_x, filter->panel_y, filter->panel_w, filter->panel_h);
+		panel_count = 1;
+	}
+
 	if (width > 0 && height > 0) {
 		for (int i = 0; i < panel_count; i++) {
 			// Manueller Fein-Offset zuerst (Bruch-Raum, aufloesungsunabhaengig),
@@ -409,6 +440,11 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 	obs_properties_add_float_slider(props, S_OFFSET_X, obs_module_text("LiquidGlass.OffsetX"), -0.2, 0.2, 0.005);
 	obs_properties_add_float_slider(props, S_OFFSET_Y, obs_module_text("LiquidGlass.OffsetY"), -0.2, 0.2, 0.005);
 
+	obs_properties_add_float_slider(props, S_PANEL_X, obs_module_text("LiquidGlass.PanelX"), 0.0, 1.0, 0.005);
+	obs_properties_add_float_slider(props, S_PANEL_Y, obs_module_text("LiquidGlass.PanelY"), 0.0, 1.0, 0.005);
+	obs_properties_add_float_slider(props, S_PANEL_W, obs_module_text("LiquidGlass.PanelW"), 0.0, 1.0, 0.005);
+	obs_properties_add_float_slider(props, S_PANEL_H, obs_module_text("LiquidGlass.PanelH"), 0.0, 1.0, 0.005);
+
 	obs_properties_add_float_slider(props, S_CORNER_RADIUS, obs_module_text("LiquidGlass.CornerRadius"), 0.0, 400.0,
 					1.0);
 
@@ -462,6 +498,8 @@ static obs_properties_t *glass_filter_get_properties(void *data)
 	obs_properties_add_color_alpha(props, S_BORDER_COLOR, obs_module_text("LiquidGlass.BorderColor"));
 	obs_properties_add_color_alpha(props, S_TINT_COLOR, obs_module_text("LiquidGlass.TintColor"));
 
+	obs_properties_add_text(props, S_ABOUT_INFO, obs_module_text("LiquidGlass.About"), OBS_TEXT_INFO);
+
 	return props;
 }
 
@@ -472,6 +510,15 @@ static void glass_filter_get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, S_POLL_INTERVAL_MS, 200);
 	obs_data_set_default_double(settings, S_OFFSET_X, 0.0);
 	obs_data_set_default_double(settings, S_OFFSET_Y, 0.0);
+
+	/* Centered, clearly visible panel -- so adding the filter with no
+	 * Zappify running (or before configuring anything) already shows the
+	 * glass effect instead of nothing. */
+	obs_data_set_default_double(settings, S_PANEL_X, 0.30);
+	obs_data_set_default_double(settings, S_PANEL_Y, 0.35);
+	obs_data_set_default_double(settings, S_PANEL_W, 0.40);
+	obs_data_set_default_double(settings, S_PANEL_H, 0.30);
+
 	obs_data_set_default_double(settings, S_CORNER_RADIUS, 56.0);
 
 	obs_data_set_default_double(settings, S_BLUR_AMOUNT, 24.0);
