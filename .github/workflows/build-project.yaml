@@ -290,6 +290,32 @@ jobs:
           config: ${{ needs.check-event.outputs.config }}
           package: ${{ fromJSON(needs.check-event.outputs.package) }}
 
+      - name: Build Installer 🛠️
+        shell: pwsh
+        run: |
+          # Build Installer 🛠️
+          # Not part of the upstream obs-plugintemplate (only zips on Windows) --
+          # produces a real Inno Setup installer alongside the zip, in the same
+          # release/ dir and with a name matching the artifact glob below, so it
+          # rides along through the existing artifact-upload/rename/release
+          # pipeline (push.yaml's windows-x64 variant already accepts zip OR exe).
+          $Iscc = "${Env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if ( -not ( Test-Path $Iscc ) ) {
+            choco install innosetup --no-progress -y | Out-Null
+          }
+          if ( -not ( Test-Path $Iscc ) ) {
+            $Iscc = "$Env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          }
+
+          $ProductName = "${{ steps.setup.outputs.pluginName }}"
+          $ProductVersion = "${{ steps.setup.outputs.pluginVersion }}"
+          $SourceDir = "${{ github.workspace }}/release/${{ needs.check-event.outputs.config }}"
+          $OutputBase = "${ProductName}-${ProductVersion}-windows-x64-setup"
+
+          & $Iscc "/DMyAppVersion=${ProductVersion}" "/DSourceDir=${SourceDir}" `
+            "/O${{ github.workspace }}/release" "/F${OutputBase}" `
+            "${{ github.workspace }}/installer/windows/liquid-glass.iss"
+
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@v4
         with:
