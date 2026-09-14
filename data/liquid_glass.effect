@@ -89,7 +89,6 @@ float4 PSGlass(VertData v_in) : TARGET
 	// panel_count == 0, d stays at its huge sentinel value and the early-out
 	// below returns the untouched backdrop, so "no panels" just means "no blur".
 	float2 half_size = float2(1.0, 1.0);
-	float2 center    = float2(0.0, 0.0);
 	float2 local     = pixel;
 	float r = 0.0;
 	float d = 1e9;
@@ -112,7 +111,6 @@ float4 PSGlass(VertData v_in) : TARGET
 			d = p_d;
 			local = p_l;
 			half_size = p_hs;
-			center = p_c;
 			r = p_r;
 		}
 	}
@@ -149,15 +147,25 @@ float4 PSGlass(VertData v_in) : TARGET
 	float2 refract_px = grad * domeFalloff * refraction_strength + shimmer;
 	float2 sample_uv  = v_in.uv + refract_px / uv_size;
 
-	// Lens magnification: near the rim, pull the sample radially toward the
-	// panel center and compress it, the way a real plano-convex lens bends
-	// its image inward at the boundary. This is what makes backdrop content
-	// visibly bulge/compress as it crosses under the glass, instead of just
-	// shifting by a constant offset -- the single biggest cue that reads as
-	// "real refracting lens" rather than "blurred, slightly shifted panel".
-	float2 center_uv = center / uv_size;
+	// Lens magnification: near the rim, pull the sample inward along the
+	// surface normal (-grad), the way a real plano-convex lens bends its
+	// image at the boundary. This is what makes backdrop content visibly
+	// bulge/compress as it crosses under the glass, instead of just shifting
+	// by a constant offset -- the single biggest cue that reads as "real
+	// refracting lens" rather than "blurred, slightly shifted panel".
+	//
+	// Scaled by the local corner radius `r`, NOT by the raw distance to the
+	// panel center: pulling toward the literal center point (the old
+	// approach) blows up into a huge diagonal displacement right at a
+	// rounded corner, since the center is much farther away diagonally there
+	// than it is perpendicular to a flat edge. That mismatch folds the
+	// sampled image over itself -- a swirling ghost/fisheye exactly where
+	// the corner curve begins. Anchoring to `r` instead keeps the pull the
+	// same order of magnitude as the (already corner-safe) refraction
+	// offset above, all the way around the rim.
 	float bulge = domeFalloff * saturate(lens_magnification);
-	sample_uv = lerp(sample_uv, center_uv + (sample_uv - center_uv) * (1.0 - bulge), bulge * 0.85);
+	float2 bulge_px = -grad * bulge * max(r, 1.0) * 0.7;
+	sample_uv += bulge_px / uv_size;
 
 	// Backdrop blur: gaussian-weighted 5x5 taps around the refracted sample.
 	// Skipped entirely when blur is effectively off (blur_amount ~0, a common
