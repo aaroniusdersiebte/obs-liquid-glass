@@ -10,11 +10,9 @@ uniform float4x4 ViewProj;
 uniform texture2d image;
 
 uniform float2 uv_size;             // source size in pixels
-uniform float4 panels[8];           // xy = panel top-left (pixels), zw = panel width/height (pixels)
-uniform int panel_count;            // how many entries in `panels` are valid (0..8)
-uniform float corner_radius;        // pixels, shared by every panel
-
-uniform float blur_amount;          // pixel radius of backdrop blur
+uniform float4 panels[16];          // xy = panel top-left (pixels), zw = panel width/height (pixels)
+uniform float4 panel_style[16];     // x = corner radius (px), y = backdrop blur (px), z = alpha (fade in/out)
+uniform int panel_count;            // how many entries in `panels` are valid (0..16)
 uniform float refraction_strength;  // pixel offset at the panel edge
 uniform float chromatic_aberration; // pixel offset for R/B channel split
 uniform float lens_magnification;   // 0..1ish, radial bulge/compression strength at the rim
@@ -92,8 +90,10 @@ float4 PSGlass(VertData v_in) : TARGET
 	float2 local     = pixel;
 	float r = 0.0;
 	float d = 1e9;
+	float blur_amount = 0.0;
+	float panel_alpha = 0.0;
 
-	for (int i = 0; i < 8; i++) {
+	for (int i = 0; i < 16; i++) {
 		if (i >= panel_count)
 			continue;
 
@@ -101,10 +101,11 @@ float4 PSGlass(VertData v_in) : TARGET
 		// (panels[i].zw) trips up libobs's effect-to-GLSL translator --
 		// go through a plain local first.
 		float4 p    = panels[i];
+		float4 st   = panel_style[i];
 		float2 p_hs = max(p.zw * 0.5, float2(1.0, 1.0));
 		float2 p_c  = p.xy + p_hs;
 		float2 p_l  = pixel - p_c;
-		float p_r   = min(corner_radius, min(p_hs.x, p_hs.y));
+		float p_r   = min(max(st.x, 0.0), min(p_hs.x, p_hs.y));
 		float p_d   = sdRoundedBox(p_l, p_hs, p_r);
 
 		if (p_d < d) {
@@ -112,6 +113,8 @@ float4 PSGlass(VertData v_in) : TARGET
 			local = p_l;
 			half_size = p_hs;
 			r = p_r;
+			blur_amount = st.y;
+			panel_alpha = saturate(st.z);
 		}
 	}
 
@@ -120,7 +123,8 @@ float4 PSGlass(VertData v_in) : TARGET
 		return orig;
 
 	// Soft drop shadow: 1 right at the panel edge, fading out to shadow_size.
-	float shadow_mask = (1.0 - smoothstep(0.0, shadow_max, d)) * saturate(shadow_intensity);
+	// panel_alpha fades the whole panel (glass + shadow) in/out smoothly.
+	float shadow_mask = (1.0 - smoothstep(0.0, shadow_max, d)) * saturate(shadow_intensity) * panel_alpha;
 
 	if (d > 1.5) {
 		float4 shadowed = lerp(orig, float4(0.0, 0.0, 0.0, orig.a), shadow_mask);
@@ -178,7 +182,9 @@ float4 PSGlass(VertData v_in) : TARGET
 			for (int y = -2; y <= 2; y++) {
 				float2 offs = float2(float(x), float(y)) * (blur_amount * 0.5) / uv_size;
 				float w = exp(-float(x * x + y * y) * 0.22);
-				color += image.Sample(def_sampler, sample_uv + offs) * w;
+				// SampleLevel: blur_amount is per panel now (varying branch) --
+				// implicit-gradient Sample() inside it upsets the D3D compiler.
+				color += image.SampleLevel(def_sampler, sample_uv + offs, 0.0) * w;
 				wsum += w;
 			}
 		}
@@ -283,7 +289,7 @@ float4 PSGlass(VertData v_in) : TARGET
 
 	color.a = orig.a;
 
-	float panel_mix = 1.0 - smoothstep(-1.5, 1.5, d);
+	float panel_mix = (1.0 - smoothstep(-1.5, 1.5, d)) * panel_alpha;
 	float4 shadowed = lerp(orig, float4(0.0, 0.0, 0.0, orig.a), shadow_mask * (1.0 - panel_mix));
 	return lerp(shadowed, color, panel_mix);
 }

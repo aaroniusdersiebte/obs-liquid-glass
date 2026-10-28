@@ -25,10 +25,12 @@ simply uses the manual panel position below instead of doing nothing.
 |---|---|
 | Follow Zappify | When on, tries to fetch panel position(s) live from a locally running Zappify instance. Falls back to the manual panel below whenever Zappify has nothing to report. |
 | Zappify Port / Poll Interval | Connection details for the optional Zappify sync — irrelevant if you don't use Zappify. |
+| Zappify Coordinates Relative To | **OBS Canvas** (default since 0.4) or **This Source** (pre-0.4 behaviour). Identical when the filtered source is canvas-sized. |
+| Transition | How long panels glide to a new position and fade in/out (ms, 0 = instant). |
 | Fine-Tune Offset X / Y | Small resolution-independent nudge applied on top of Zappify's panel position, for alignment edge cases. |
 | Manual Panel X / Y / Width / Height | Top-left position and size of the glass panel, as a **fraction (0–1) of the canvas** — this is what positions the panel when Zappify isn't providing one, i.e. in fully standalone use. Set Width or Height to 0 to hide the panel entirely. |
-| Corner Radius | Rounding of the panel corners. |
-| Backdrop Blur | Box-blur radius applied to the content behind the glass. |
+| Corner Radius | Rounding of the panel corners (Zappify can override this per panel to match each card). |
+| Backdrop Blur | Blur radius applied to the content behind the glass (Zappify can override it per module). |
 | Refraction Strength | How far the backdrop is displaced near the panel edges (lensing). |
 | Chromatic Aberration | Red/blue channel split strength near the edges. |
 | Shimmer Speed / Amplitude | Animated ripple over time; set amplitude to 0 for a static panel. |
